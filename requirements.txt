@@ -1,0 +1,9 @@
+# CrewAI 多智能体系统核心依赖
+crewai==1.7.2
+crewai-tools==1.7.2
+
+# HTTP 请求库（用于 API 调用）
+requests==2.32.5
+
+# 数据验证（CrewAI 依赖，但明确列出以确保兼容性）
+pydantic==2.11.10
