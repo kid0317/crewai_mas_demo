@@ -10,17 +10,6 @@ sys.path.insert(0, str(project_root))
 from crewai import Agent, Task, Crew, Process
 from llm.aliyun_llm import AliyunLLM
 from tools.intermediate_tool import IntermediateTool
-# ==============================================================================
-# 0. 模拟上游输入 (视觉分析报告 + 用户意图)
-# ==============================================================================
-visual_report_input = """
-【视觉分析报告】
-1. 画面主体：一只墨绿色的粗陶马克杯，杯口有不规则的金边。
-2. 背景环境：午后的窗边，有树影落在木质桌面上，旁边放着一本打开的英文书。
-3. 氛围关键词：松弛感、复古、独处、静谧。
-"""
-
-user_intent_input = "我想卖这个杯子，突出它的质感，想吸引那些喜欢宅家读书记笔记的女生。"
 
 # ==============================================================================
 # 1. 定义 Agent: 爆款营销策划 (The Strategist)
@@ -73,47 +62,11 @@ content_strategist = Agent(
         region="cn",  # 使用 region 参数，可选值: "cn", "intl", "finance"
     ),
 )
-
-# ==============================================================================
-# 2. 定义 Task: 要求结构化输出策略
-# ==============================================================================
-strategy_task = Task(
-    description=f"""
-    请根据输入信息，运用你的 CES 算法知识和反漏斗模型，制定一篇小红书爆款笔记的**策略简报**。
-    
-    ---输入信息---
-    {visual_report_input}
-    
-    {user_intent_input}
-    -------------
-    """,
-    expected_output="""
-    一份结构化的 JSON 格式策略简报，包含以下字段：
-    示例格式：
+messages = [
     {
-        "Target_Core_Audience": "核心细分人群（越窄越好）",
-        "Pain_Point_Scene": "具体的痛点或使用场景",
-        "Title_Formula": "建议的标题逻辑（痛点+钩子+人群）",
-        "Content_Brief": "文案内容的策略大纲",
-        "Interaction_Plan": "如何设计评论诱饵（提高CES评论分）",
-        "Value_Proposition": "为什么用户会收藏这篇笔记（提高CES收藏分）",
-        "Core_Keywords": ["3个建议布局的长尾关键词1", "关键词2", "关键词3"]
+        "role": "user",
+        "content": "我今天健身了，感觉很累，但是很开心。帮我设计一篇笔记"
     }
-    """,
-    agent=content_strategist
-)
-
-# ==============================================================================
-# 3. 运行 Crew
-# ==============================================================================
-crew = Crew(
-    agents=[content_strategist],
-    tasks=[strategy_task],
-    process=Process.sequential
-)
-
-print("############# 开始制定高 CES 增长策略 #############")
-result = crew.kickoff()
-
-print("\n\n############# 最终策略产出 #############")
+]
+result = content_strategist.kickoff(messages)
 print(result)
