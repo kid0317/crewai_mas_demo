@@ -1,9 +1,32 @@
+"""
+课程：02｜解构智能体：Agent 的解剖学与 ReAct 范式 示例代码
+单 Agent 执行任务示例
+
+演示如何使用 CrewAI 框架创建和配置一个完整的 Agent，包括：
+1. Agent 的 Role、Goal、Backstory 定义（人设工程）
+2. 工具集成（搜索、网页抓取、文件写入）
+3. Task 和 Crew 的创建
+4. Agent 执行任务的完整流程
+
+本示例展示了一个网络调研专家 Agent，能够：
+- 通过搜索工具收集信息
+- 使用网页抓取工具获取详细内容
+- 生成结构化的 Markdown 格式调研报告
+- 将报告保存到本地文件
+
+学习要点：
+- Agent 的"人设工程"：如何通过 Role、Goal、Backstory 塑造 Agent 的专业能力
+- 工具集成：如何为 Agent 配置合适的工具
+- 任务执行：Agent 如何通过 ReAct 循环完成任务
+"""
+
 import sys
 import os
 from pathlib import Path
 
 # 添加项目根目录到 Python 路径，以便能够导入项目模块
 project_root = Path(__file__).resolve().parent.parent
+print(project_root)
 sys.path.insert(0, str(project_root))
 
 from crewai import Agent, Task, Crew
@@ -11,6 +34,14 @@ from llm import aliyun_llm
 from crewai_tools import ScrapeWebsiteTool, FileWriterTool, FileReadTool
 from tools import BaiduSearchTool
 
+
+# ==============================================================================
+# Agent 定义：网络调研专家
+# ==============================================================================
+# 这是 Agent 的核心定义部分，展示了如何通过 Role、Goal、Backstory 来塑造 Agent 的专业能力
+# Role：定义 Agent 的专业角色
+# Goal：定义 Agent 的核心目标
+# Backstory：定义 Agent 的专业背景和工作方法，这是"人设工程"的关键
 
 searcher = Agent(
     role="网络调研专家",
@@ -45,15 +76,27 @@ searcher = Agent(
 - 如果搜索结果中没有足够的相关链接，需要调整搜索策略重新搜索
 
 你始终遵循准确性、完整性和可追溯性的原则，确保每份报告都有可靠的信息来源支撑。""",
+    # 工具配置：为 Agent 提供完成任务所需的能力
+    # ScrapeWebsiteTool：网页抓取工具，用于获取网页的完整内容
+    # BaiduSearchTool：百度搜索工具，用于搜索网络信息
+    # FileWriterTool：文件写入工具，用于保存调研报告
     tools=[ScrapeWebsiteTool(), BaiduSearchTool(), FileWriterTool()],
-    memory=True,
-    max_iter=100, 
+    memory=True,  # 启用记忆功能，Agent 可以记住之前的对话内容
+    max_iter=100,  # 最大迭代次数，防止 Agent 陷入无限循环
     llm=aliyun_llm.AliyunLLM(
         model="qwen-plus",
         api_key=os.getenv("QWEN_API_KEY"),
         region="cn",  # 使用 region 参数，可选值: "cn", "intl", "finance"
     ),
 )
+
+
+# ==============================================================================
+# Task 定义：调研任务
+# ==============================================================================
+# Task 定义了 Agent 需要完成的具体任务
+# description：任务描述，告诉 Agent 要做什么
+# expected_output：期望输出，告诉 Agent 应该产出什么格式的结果
 
 task = Task(
     description="""帮我调研极客时间的相关信息，请分析这个研究任务，规划完成研究所需的步骤，并产出一份专业的调研报告。
@@ -89,12 +132,32 @@ task = Task(
    - 报告基于抓取的详细网页内容，而非仅搜索摘要
 
 输出文件：`{主题}-最终报告.md`""",
-    agent=searcher,
+    agent=searcher,  # 指定执行任务的 Agent
 )
+
+
+# ==============================================================================
+# Crew 定义：单 Agent 工作流
+# ==============================================================================
+# Crew 是 Agent 和 Task 的组织者，负责协调任务的执行
+# 本示例是单 Agent 场景，Agent 独立完成任务
+
 crew = Crew(
-    agents=[searcher],
-    tasks=[task],
-    verbose=True,
+    agents=[searcher],  # 参与工作的 Agent 列表
+    tasks=[task],  # 需要执行的任务列表
+    verbose=True,  # 启用详细日志，可以看到 Agent 的思考过程
 )
+
+
+# ==============================================================================
+# 执行任务
+# ==============================================================================
+# Crew.kickoff() 启动任务执行流程
+# Agent 会按照 ReAct 循环（Reasoning + Acting）来完成任务：
+# 1. 思考（Thought）：分析任务，决定下一步行动
+# 2. 行动（Action）：调用工具执行操作
+# 3. 观察（Observation）：获取工具执行结果
+# 4. 重复上述步骤，直到得到最终答案
+
 result = crew.kickoff()
 print(result)

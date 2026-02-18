@@ -1,3 +1,26 @@
+"""
+课程：09｜定义Process：任务调度与信息传递 示例代码
+Multi-Agent 协作示例
+
+演示如何使用多个 Agent 协作完成复杂任务，包括：
+1. 多个 Agent 的定义和角色分工（Researcher、Writer、Searcher、Editor）
+2. Task 之间的依赖关系（通过 context 参数传递）
+3. Sequential Process：顺序执行任务，确保任务按依赖关系执行
+4. Agent 之间的委托机制（allow_delegation=True）
+
+本示例展示了一个完整的调研报告生成流程：
+- Researcher Agent：分析任务，规划研究步骤，设计报告大纲
+- Writer Agent：按照步骤撰写报告，委托 Searcher 收集信息
+- Searcher Agent：快速高效地收集网络信息
+- Editor Agent：审核报告质量，提供修改建议
+
+学习要点：
+- 多 Agent 协作：如何设计 Agent 的角色和职责分工
+- 任务依赖：如何通过 context 参数传递上游任务的输出
+- Process 类型：Sequential Process 确保任务按顺序执行
+- Agent 委托：Writer Agent 如何委托 Searcher Agent 完成子任务
+"""
+
 from crewai import Agent, Task, Crew, Process
 import os
 import sys
@@ -11,6 +34,16 @@ if str(project_root) not in sys.path:
 from llm import aliyun_llm
 from crewai_tools import ScrapeWebsiteTool, FileWriterTool, FileReadTool
 from tools import BaiduSearchTool, FixedDirectoryReadTool
+
+
+# ==============================================================================
+# Agent 定义：多 Agent 协作团队
+# ==============================================================================
+# 本示例定义了4个 Agent，每个 Agent 负责不同的职责：
+# 1. Researcher：研究规划专家，负责任务分析和报告大纲设计
+# 2. Writer：报告撰写专家，负责撰写报告内容
+# 3. Searcher：网络搜索专家，负责快速收集信息
+# 4. Editor：报告审核专家，负责审核报告质量
 
 researcher = Agent(
     role="深度研究专家",
@@ -305,6 +338,12 @@ editor = Agent(
     verbose=True,
 )
 
+# ==============================================================================
+# Task 定义：研究规划任务
+# ==============================================================================
+# 这是第一个任务，由 Researcher Agent 执行
+# 输出：任务步骤规划和报告大纲
+
 task_plan = Task(
     description="""调研极客时间平台的全面信息，包括但不限于：
 请分析这个研究任务，规划完成研究所需的步骤，并设计一份专业的调研报告大纲。""",
@@ -328,6 +367,13 @@ task_plan = Task(
     agent=researcher
 )
 
+
+# ==============================================================================
+# Task 定义：报告撰写任务
+# ==============================================================================
+# 这是第二个任务，由 Writer Agent 执行
+# context=[task_plan]：指定任务依赖，Writer 可以访问 task_plan 的输出
+# 这是多 Agent 协作的关键：通过 context 传递上游任务的输出
 
 task_write = Task(
     description="""根据深度研究专家生成的任务步骤和报告大纲，完成研究报告的撰写工作。
@@ -370,12 +416,28 @@ task_write = Task(
     context=[task_plan],  # 明确任务依赖关系
 )
 
+# ==============================================================================
+# Crew 定义：Multi-Agent 协作工作流
+# ==============================================================================
+# Process.sequential：顺序执行任务，确保 task_plan 先执行，task_write 后执行
+# 这样可以保证 task_write 能够访问到 task_plan 的输出
+
 crew = Crew(
-    agents=[researcher, searcher, writer, editor],
-    tasks=[task_plan,task_write],
-    process=Process.sequential,
-    verbose=True,
+    agents=[researcher, searcher, writer, editor],  # 参与工作的所有 Agent
+    tasks=[task_plan, task_write],  # 任务列表，按顺序执行
+    process=Process.sequential,  # 顺序执行模式，确保任务依赖关系
+    verbose=True,  # 启用详细日志，可以看到所有 Agent 的协作过程
 )
+
+
+# ==============================================================================
+# 执行任务
+# ==============================================================================
+# Crew.kickoff() 启动多 Agent 协作流程：
+# 1. 首先执行 task_plan（Researcher Agent）
+# 2. 然后执行 task_write（Writer Agent），可以访问 task_plan 的输出
+# 3. Writer Agent 在执行过程中可以委托 Searcher Agent 和 Editor Agent
+# 4. 最终生成完整的调研报告
 
 result = crew.kickoff()
 print(result)

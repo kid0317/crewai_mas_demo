@@ -1,11 +1,21 @@
 """
-手搓 Agent 示例代码
-这是一个简化的 Agent 实现，用于教学演示 Agent 的核心原理：
-1. 循环调用 LLM
-2. 解析 LLM 返回的 Action
-3. 执行工具
+课程：02｜解构智能体：Agent 的解剖学与 ReAct 范式 示例代码
+原生 Agent 实现（不使用 CrewAI 框架）
+
+这是一个教学示例，展示 Agent 的核心工作原理和 ReAct 范式：
+1. 循环调用 LLM，让 LLM 进行推理（Reasoning）
+2. 解析 LLM 返回的 Action（工具名称和输入参数）
+3. 执行工具（Acting）
 4. 将工具结果作为 Observation 返回给 LLM
-5. 重复直到得到 Final Answer
+5. 重复上述步骤，直到得到 Final Answer
+
+本示例帮助学员理解：
+- Agent 的本质：一个不断调用 LLM 和执行工具的循环
+- ReAct 范式：Reasoning（推理）→ Acting（行动）→ Observation（观察）的循环
+- 工具调用机制：如何解析 LLM 的输出并执行相应的工具
+- 对话历史管理：如何维护 LLM 的上下文，让 Agent 能够"记住"之前的操作
+
+通过这个示例，学员可以深入理解 CrewAI 等框架的底层实现原理。
 """
 from llm.aliyun_llm import AliyunLLM
 import os

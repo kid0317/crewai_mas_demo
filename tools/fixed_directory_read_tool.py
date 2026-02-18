@@ -1,7 +1,23 @@
 """
+课程：13｜自定义工具封装：构建 Tools 的五步标准SOP 示例代码
 修复版本的 DirectoryReadTool
 
-修复了原版本中当 directory 为 "." 时，文件名中的点号被错误替换的问题。
+修复了原 CrewAI DirectoryReadTool 中当 directory 为 "." 时，
+文件名中的点号被错误替换的问题。
+
+问题说明：
+- 原版本使用 replace() 方法处理路径，导致文件名中的点号被错误替换
+- 本版本使用 os.path.relpath() 正确处理相对路径
+
+修复方法：
+- 使用 os.path.relpath() 计算相对路径
+- 正确处理当前目录（"."）的情况
+- 保持路径格式的一致性
+
+学习要点：
+- 工具修复：如何修复现有工具的问题
+- 路径处理：如何正确处理文件路径
+- 兼容性：如何保持与原有工具的兼容性
 """
 import os
 from typing import Any
