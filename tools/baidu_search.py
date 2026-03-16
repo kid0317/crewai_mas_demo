@@ -25,7 +25,7 @@
 import os
 import json
 import logging
-from typing import Type, Optional, List, Dict, Any, Literal
+from typing import Type, Optional, List, Dict, Any, Literal, Union
 import requests
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field, field_validator
@@ -52,9 +52,9 @@ class BaiduSearchInput(BaseModel):
         ..., 
         description="搜索查询内容，即用户要搜索的问题或关键词，不能为空，不能只包含空白字符，通常由一个或几个词组成"
     )
-    top_k: Optional[int] = Field(
+    top_k: Optional[Union[int, str]] = Field(
         20,
-        description="返回的搜索结果数量，默认20，在精确信息搜索时推荐5以下，广泛调研时10以上。注意生成int型参数，如：{'top_k': 10}，不要生成字符串型参数，如：{'top_k': '10'}"
+        description="返回的搜索结果数量，默认20，在精确信息搜索时推荐5以下，广泛调研时10以上。"
     )
     recency_filter: Optional[Literal["week", "month", "semiyear", "year"]] = Field(
         None,
@@ -91,8 +91,16 @@ class BaiduSearchInput(BaseModel):
     
     @field_validator('top_k')
     @classmethod
-    def validate_top_k(cls, v: int) -> int:
-        """验证top_k范围"""
+    def validate_top_k(cls, v: Union[int, str]) -> int:
+        """验证top_k范围，支持字符串输入自动转换为整数"""
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"错误：top_k参数值无效。"
+                f"原因：无法将值'{v}'转换为整数。"
+                f"解决提示：请提供整数或可转换为整数的字符串，推荐值：精确信息搜索时5以下，广泛调研时10以上，默认20。"
+            )
         if v < 0:
             raise ValueError(
                 f"错误：top_k参数值无效。"
@@ -129,7 +137,7 @@ class BaiduSearchTool(BaseTool):
     def _run(
         self,
         query: str,
-        top_k: int = 20,
+        top_k: Union[int, str] = 20,
         recency_filter: Optional[str] = None,
         sites: Optional[List[str]] = None,
     ) -> str:
@@ -156,6 +164,8 @@ class BaiduSearchTool(BaseTool):
             )
             logger.error("API Key缺失，搜索失败")
             return error_msg
+        # 确保 top_k 为整数（防止 LLM 传入字符串）
+        top_k = int(top_k)
         # 记录搜索开始
         logger.info("=" * 80)
         logger.info("开始执行百度搜索")

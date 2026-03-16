@@ -38,11 +38,11 @@ from tools import BaiduSearchTool, FixedDirectoryReadTool  # noqa: E402
 WORKSPACE_DIR = Path(__file__).parent / "workspace"
 SESSIONS_DIR  = WORKSPACE_DIR / "sessions"
 
-# 💡 可调整的核心参数
-PRUNE_KEEP_TURNS   = 10      # 保留最近 N 轮原始 tool result，更早的清空占位
-COMPRESS_THRESHOLD = 0.45    # 上下文使用率超过此值触发压缩
-CHUNK_TOKENS       = 2000    # 压缩时每个 chunk 的近似 token 数
-FRESH_KEEP_TURNS   = 10      # 压缩时保留最近 N 轮不压缩
+# 可调整的核心参数
+PRUNE_KEEP_TURNS   = 10      # 剪枝：保留最近 N 轮原始 tool result，更早的清空占位
+COMPRESS_THRESHOLD = 0.45    # 压缩：上下文使用率超过此值触发压缩
+CHUNK_TOKENS       = 2000    # 压缩：每个 chunk 的近似 token 数
+FRESH_KEEP_TURNS   = 10      # 压缩：保留最近 N 轮原文不压缩（与 PRUNE_KEEP_TURNS 独立，可分别调整）
 MODEL_CTX_LIMIT    = 32000   # fallback：qwen3-max context window
 
 
@@ -52,7 +52,7 @@ MODEL_CTX_LIMIT    = 32000   # fallback：qwen3-max context window
 
 def build_bootstrap_prompt(workspace_dir: Path) -> str:
     """
-    💡 核心设计：只加载"导航骨架"，不把所有文件塞进去。
+    只加载"导航骨架"，不把所有文件塞进 backstory。
     soul（身份风格）+ user_profile（用户画像）
     + agent_rules（SOP 知识库）+ memory_index（记忆索引，200 行上限）
     """
@@ -107,19 +107,20 @@ def save_session_ctx(
 
 def append_session_raw(
     session_id: str,
-    role: str,
-    content: str,
+    messages: list[dict],
     sessions_dir: Path = SESSIONS_DIR,
 ) -> None:
-    """追加一条记录到原始完整历史（append-only，保留所有中间过程）"""
+    """
+    追加一批消息到原始完整历史（append-only，保留所有中间过程）。
+    每条消息写一行 JSONL，附加 ts 时间戳字段。
+    messages 可包含任意角色：system / user / assistant / tool。
+    """
     sessions_dir.mkdir(parents=True, exist_ok=True)
-    record = {
-        "role":    role,
-        "content": content,
-        "ts":      datetime.datetime.now().isoformat(),
-    }
+    ts = datetime.datetime.now().isoformat()
     with open(sessions_dir / f"{session_id}_raw.jsonl", "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        for msg in messages:
+            record = {**msg, "ts": ts}
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ def prune_tool_results(
     keep_turns: int = PRUNE_KEEP_TURNS,
 ) -> None:
     """
-    💡 核心设计：in-place 修改，Tool Result 是上下文膨胀的主要来源。
+    in-place 修改。Tool Result 是上下文膨胀的主要来源。
     策略：找到倒数第 keep_turns 个 user 消息的位置，
     该位置之前的所有 tool 消息内容替换为 [已剪枝]，保留消息占位和 tool_call_id。
     """
@@ -167,7 +168,7 @@ def chunk_by_tokens(
     chunk_tokens: int = CHUNK_TOKENS,
 ) -> list[list[dict]]:
     """
-    💡 按近似 token 数切分消息列表。
+    按近似 token 数切分消息列表。
     估算方式：中文 1 字 ≈ 1 token，英文 4 字 ≈ 1 token，取保守值 len // 2。
     切分策略：当前 chunk 加入下一条消息后超过阈值时，先 flush 当前 chunk。
     单条消息超阈值时独立成 chunk（不截断消息内容）。
@@ -196,7 +197,7 @@ def chunk_by_tokens(
 
 
 def _summarize_chunk(messages: list[dict]) -> str:
-    """💡 用轻量模型生成摘要，节省成本（可 mock 用于测试）"""
+    """用轻量模型生成摘要，节省成本（可 mock 用于测试）"""
     summary_llm = LLM(model="qwen3-turbo")
     history = "\n".join(
         f"{m.get('role', '')}: {str(m.get('content', ''))[:300]}"
@@ -210,33 +211,39 @@ def _summarize_chunk(messages: list[dict]) -> str:
 def maybe_compress(
     messages: list[dict],
     context: LLMCallHookContext,
+    fresh_keep_turns: int = FRESH_KEEP_TURNS,
+    chunk_tokens: int = CHUNK_TOKENS,
+    compress_threshold: float = COMPRESS_THRESHOLD,
 ) -> None:
     """
-    💡 核心设计：in-place 修改 messages。
-    超过 COMPRESS_THRESHOLD 时：
-      ① 把旧消息按 CHUNK_TOKENS 分 chunk
-      ② 每 chunk 单独调 qwen3-turbo 生成摘要
+    in-place 修改 messages。超过 compress_threshold 时触发压缩：
+      ① 保留原 system 消息和最近 fresh_keep_turns 轮原文
+      ② 将更早的消息按 chunk_tokens 分块，逐块调 qwen3-turbo 生成摘要
       ③ 用摘要（system 角色）替换原消息
-    保留：原 system 消息 + 最近 FRESH_KEEP_TURNS 轮原文。
+
+    参数说明：
+      fresh_keep_turns   -- 压缩时保留最近 N 轮不压缩（默认 FRESH_KEEP_TURNS）
+      chunk_tokens       -- 每个压缩块的近似 token 数（默认 CHUNK_TOKENS）
+      compress_threshold -- 上下文使用率超过此值才触发（默认 COMPRESS_THRESHOLD）
     """
     model_limit   = getattr(context.llm, "context_window_size", MODEL_CTX_LIMIT)
     approx_tokens = sum(len(str(m.get("content", ""))) // 2 for m in messages)
-    if approx_tokens / model_limit < COMPRESS_THRESHOLD:
+    if approx_tokens / model_limit < compress_threshold:
         return
 
     system_msgs = [m for m in messages if m.get("role") == "system"]
     non_system  = [m for m in messages if m.get("role") != "system"]
 
     user_indices = [i for i, m in enumerate(non_system) if m.get("role") == "user"]
-    if len(user_indices) <= FRESH_KEEP_TURNS:
-        return  # 不足以压缩，跳过
+    if len(user_indices) <= fresh_keep_turns:
+        return  # 轮数不足，无法切出"新鲜区"，跳过
 
-    cutoff     = user_indices[-FRESH_KEEP_TURNS]
+    cutoff     = user_indices[-fresh_keep_turns]
     old_msgs   = non_system[:cutoff]
     fresh_msgs = non_system[cutoff:]
 
-    # 分 chunk，每 chunk 独立摘要
-    chunks       = chunk_by_tokens(old_msgs, CHUNK_TOKENS)
+    # 分块摘要：每块独立调用轻量模型
+    chunks       = chunk_by_tokens(old_msgs, chunk_tokens)
     summary_msgs = [
         {
             "role":    "system",
@@ -245,7 +252,7 @@ def maybe_compress(
         for chunk in chunks
     ]
 
-    # in-place 替换：保留 system + 摘要 + 新鲜内容
+    # in-place 替换：system + 摘要 + 新鲜内容
     messages.clear()
     messages.extend(system_msgs + summary_msgs + fresh_msgs)
 
@@ -258,13 +265,16 @@ def maybe_compress(
 class XiaoPawCrew:
     """
     XiaoPaw 个人助手（第19课）
-    演示：Bootstrap + @before_llm_call（剪枝 + 压缩）+ @after_llm_call（session 持久化）
+    演示：Bootstrap + @before_llm_call（session 恢复 + 剪枝 + 压缩）
+    session 持久化在 kickoff() 返回后由 main() 统一完成。
     """
 
     def __init__(self, session_id: str, user_message: str) -> None:
         self.session_id      = session_id
         self.user_message    = user_message
-        self._session_loaded = False  # 💡 session 恢复只做一次（首次 LLM 调用前）
+        self._session_loaded = False        # session 恢复只做一次（首次 LLM 调用前）
+        self._last_msgs: list[dict] = []    # 保存 executor 的 messages 引用，kickoff 后用于持久化
+        self._history_len    = 0            # 恢复的历史消息数，kickoff 后据此确定本轮新增消息
 
     @agent
     def assistant_agent(self) -> Agent:
@@ -309,38 +319,25 @@ class XiaoPawCrew:
     @before_llm_call
     def before_llm_hook(self, context: LLMCallHookContext) -> bool | None:
         """
-        💡 每次 LLM 调用前拦截，in-place 修改 context.messages。
+        每次 LLM 调用前拦截，in-place 修改 context.messages。
 
         首次调用：从 ctx.json 恢复历史 context，追加本轮 user 消息。
-        每次调用：① 剪枝旧 tool result → ② 超阈值时压缩。
+        每次调用：① 保存 messages 引用 → ② 剪枝旧 tool result → ③ 超阈值时压缩。
 
-        ⚠️ 为什么不用 @after_llm_call：
-        crewai 的 _setup_after_llm_call_hooks 在 executor 有 after_llm_call_hooks 时，
-        会把 answer（包括 tool_calls list）str() 化后返回，
-        导致 executor 的 isinstance(answer, list) 判断失败，工具永远不执行。
-        因此改为在下一次 before_llm_call 时，从 context.messages 里读取
-        上一轮 executor 已追加的 assistant 消息来持久化。
+        ⚠️ 为什么不用 @after_llm_call 做持久化：
+        crewai 的 _setup_after_llm_call_hooks 只要有 after 钩子，就会对 answer
+        强制 str()，导致 executor 的 isinstance(answer, list) 判断失败，工具不执行。
+        因此 session 持久化改为在 kickoff() 返回后由 main() 统一完成：
+        此时 executor 已把最终答案追加进 context.messages，_last_msgs 引用拿到全量。
         """
         if not self._session_loaded:
             self._restore_session(context)
             self._session_loaded = True
-        else:
-            # ── 非首次调用：把 executor 已追加的最新 assistant 消息写入 raw log ──
-            # executor 在每次 LLM 返回后会 _append_message，所以 messages 末尾
-            # 可能有新的 assistant / tool 消息，找到最后一条 assistant 消息记录
-            last_assistant = next(
-                (m for m in reversed(context.messages) if m.get("role") == "assistant"),
-                None,
-            )
-            if last_assistant:
-                content = last_assistant.get("content") or ""
-                # 只记录文字回复（非 tool call 占位）
-                if content and not str(content).strip().startswith("[{"):
-                    append_session_raw(self.session_id, "assistant", str(content))
-                    # 同步更新 ctx 快照（含本轮完整 messages）
-                    save_session_ctx(self.session_id, list(context.messages))
 
-        prune_tool_results(context.messages)     # ① 剪枝
+        # 每次都更新引用：kickoff 结束后 _last_msgs 就是含最终回答的完整消息列表
+        self._last_msgs = context.messages
+
+        prune_tool_results(context.messages)       # ① 剪枝
         maybe_compress(context.messages, context)  # ② 压缩
         return None  # 返回 None 继续调用；返回 False 则阻止 LLM 调用
 
@@ -348,27 +345,25 @@ class XiaoPawCrew:
 
     def _restore_session(self, context: LLMCallHookContext) -> None:
         """
-        💡 取出 CrewAI 渲染的 user 消息 → 写入 raw log
-        → 用历史 ctx 替换 context.messages + 追加新 user 消息。
-        Agent 感知不到 session 中断，看到的是连续的上下文。
+        用历史 ctx 替换 context.messages + 追加新 user 消息，
+        使 Agent 感知不到 session 中断，看到的是连续的上下文。
+
+        流程：
+          ① 加载历史，记录历史长度（kickoff 后据此切出本轮新增消息）
+          ② 有历史时：替换 context.messages = 历史 + 新 user 消息
         """
-        # 取出当前轮 user 消息（CrewAI 将 task description 渲染后注入，在末尾）
+        history = load_session_ctx(self.session_id)
+        self._history_len = len(history)  # kickoff 后 _last_msgs[_history_len:] = 本轮新增消息
+
+        if not history:
+            return  # 全新 session，无历史可恢复
+
+        # 在 clear() 之前提取当前轮 user 消息，避免替换后丢失
         current_user_msg = next(
             (m for m in reversed(context.messages) if m.get("role") == "user"),
             {},
         )
-        if current_user_msg:
-            append_session_raw(
-                self.session_id,
-                "user",
-                str(current_user_msg.get("content", "")),
-            )
 
-        history = load_session_ctx(self.session_id)
-        if not history:
-            return  # 全新 session，无历史
-
-        # 💡 替换：历史 context + 新 user 消息 = Agent 看到连续上下文
         context.messages.clear()
         context.messages.extend(history)
         if current_user_msg:
@@ -398,14 +393,12 @@ DEMO_ROUNDS = [
 
 
 def main() -> None:
-    ctx_file = SESSIONS_DIR / f"{SESSION_ID}_ctx.json"
-
     print(f"\n{'='*60}")
     print("XiaoPaw 助手 - 第19课：上下文生命周期管理")
     print(f"{'='*60}")
     print(f"Session ID : {SESSION_ID}")
-    if ctx_file.exists():
-        saved = json.loads(ctx_file.read_text())
+    saved = load_session_ctx(SESSION_ID)
+    if saved:
         print(f"历史消息   : {len(saved)} 条（将恢复上下文）")
     else:
         print("历史消息   : 无（全新 session）")
@@ -416,9 +409,18 @@ def main() -> None:
         print(f"用户消息   : {message}")
         print(f"{'─'*60}\n")
 
-        result = XiaoPawCrew(SESSION_ID, message).crew().kickoff(
+        crew_instance = XiaoPawCrew(SESSION_ID, message)
+        result = crew_instance.crew().kickoff(
             inputs={"user_request": message}
         )
+
+        # kickoff() 返回后，_last_msgs 包含完整消息历史。
+        # _history_len 是本轮之前的历史长度，切片即本轮所有新增消息
+        # （user → tool_calls → tool_results → ... → final assistant）
+        if crew_instance._last_msgs:
+            new_msgs = list(crew_instance._last_msgs)[crew_instance._history_len:]
+            append_session_raw(SESSION_ID, new_msgs)
+            save_session_ctx(SESSION_ID, list(crew_instance._last_msgs))
 
         print(f"\n{'─'*60}")
         print(f"回复：\n{result.raw}")

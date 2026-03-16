@@ -39,6 +39,7 @@ from m3l19_context_mgmt import (  # noqa: E402
     PRUNE_KEEP_TURNS,
     COMPRESS_THRESHOLD,
     CHUNK_TOKENS,
+    FRESH_KEEP_TURNS,
 )
 
 _MODULE = "m3l19_context_mgmt"
@@ -120,13 +121,15 @@ class TestPruneToolResults:
 
     def test_old_tool_results_are_cleared(self):
         """10 轮之前的 tool 消息内容应被替换为 [已剪枝]"""
-        msgs = _make_messages(15)  # 15 轮，前 5 轮应被剪枝
+        msgs = _make_messages(15)  # 15 轮，keep_turns=10 → 前 5 轮被剪枝
 
         prune_tool_results(msgs, keep_turns=10)
 
-        # 前 5 轮（索引 0-14）的 tool 消息应被清空
-        old_tool_msgs = [m for m in msgs[:15] if m["role"] == "tool"]
-        assert len(old_tool_msgs) == 5
+        # 每轮 3 条消息（user + assistant + tool），前 5 轮 = 前 15 条消息
+        msgs_per_turn = 3
+        pruned_turns = 15 - 10
+        old_tool_msgs = [m for m in msgs[:pruned_turns * msgs_per_turn] if m["role"] == "tool"]
+        assert len(old_tool_msgs) == pruned_turns
         for m in old_tool_msgs:
             assert m["content"] == "[已剪枝]"
 
@@ -173,13 +176,17 @@ class TestPruneToolResults:
 
     def test_uses_default_keep_turns_constant(self):
         """不传 keep_turns 时使用模块常量 PRUNE_KEEP_TURNS"""
-        msgs = _make_messages(PRUNE_KEEP_TURNS + 5)
+        extra_turns  = 5
+        total_turns  = PRUNE_KEEP_TURNS + extra_turns
+        msgs_per_turn = 3  # user + assistant + tool
+        msgs = _make_messages(total_turns)
 
         prune_tool_results(msgs)  # 不传参数
 
-        old_tool_msgs = [m for m in msgs[:PRUNE_KEEP_TURNS * 3] if m["role"] == "tool"]
+        # 前 extra_turns 轮的 tool 消息应被剪枝
+        old_tool_msgs = [m for m in msgs[:extra_turns * msgs_per_turn] if m["role"] == "tool"]
         pruned = [m for m in old_tool_msgs if m["content"] == "[已剪枝]"]
-        assert len(pruned) == 5  # 前 5 轮被剪枝
+        assert len(pruned) == extra_turns
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -244,8 +251,10 @@ class TestSessionPersistence:
 
     def test_append_raw_creates_jsonl(self, tmp_path):
         """append_session_raw 创建 .jsonl 文件，每行是合法 JSON"""
-        append_session_raw("s1", "user", "消息1", sessions_dir=tmp_path)
-        append_session_raw("s1", "assistant", "回复1", sessions_dir=tmp_path)
+        append_session_raw("s1", [
+            {"role": "user",      "content": "消息1"},
+            {"role": "assistant", "content": "回复1"},
+        ], sessions_dir=tmp_path)
 
         raw_file = tmp_path / "s1_raw.jsonl"
         assert raw_file.exists()
@@ -260,7 +269,7 @@ class TestSessionPersistence:
     def test_append_raw_is_append_only(self, tmp_path):
         """多次 append 不覆盖，累积追加"""
         for i in range(5):
-            append_session_raw("s2", "user", f"msg{i}", sessions_dir=tmp_path)
+            append_session_raw("s2", [{"role": "user", "content": f"msg{i}"}], sessions_dir=tmp_path)
 
         lines = (tmp_path / "s2_raw.jsonl").read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 5
@@ -328,13 +337,13 @@ class TestMaybeCompress:
         assert any(m["content"] == "系统提示" for m in system_msgs)
 
     def test_recent_turns_preserved_after_compress(self):
-        """压缩后最近 PRUNE_KEEP_TURNS 轮的 user 消息内容保留"""
+        """压缩后最近 FRESH_KEEP_TURNS 轮的 user 消息内容保留"""
         msgs = [{"role": "system", "content": "系统提示"}]
         msgs += self._make_large_messages(20, content_size=2000)
 
-        # 记录最后 PRUNE_KEEP_TURNS 轮的 user 消息
+        # 记录最后 FRESH_KEEP_TURNS 轮的 user 消息（压缩保留区）
         user_msgs = [m for m in msgs if m["role"] == "user"]
-        recent_user_contents = {m["content"] for m in user_msgs[-PRUNE_KEEP_TURNS:]}
+        recent_user_contents = {m["content"] for m in user_msgs[-FRESH_KEEP_TURNS:]}
 
         mock_ctx = MagicMock()
         mock_ctx.llm = MagicMock()
