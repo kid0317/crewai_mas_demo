@@ -1,19 +1,19 @@
 # m3l20 专用沙盒配置
-# 与 m2l16 的区别：workspace 整体挂载为 rw，并额外挂载共享 skills/ 目录
+# 与 m2l16（根目录 sandbox-docker-compose.yaml）的区别：
+#   - workspace 整体挂载为 :rw（memory-save 可写任意 workspace 文件）
+#   - skills 挂载改为 :rw（skill-creator 可以写新 SKILL.md + 更新 load_skills.yaml）
 #
-# 使用前：
-#   1. 确保 crewai_mas_demo/sandbox-docker-compose.yaml 已启动 AIO-Sandbox 基础服务
-#   2. 或直接用本文件覆盖挂载配置运行：
-#      docker compose -f sandbox-docker-compose.yaml up -d
+# 使用方式：
+#   cd crewai_mas_demo/m3l20 && docker compose -f sandbox-docker-compose.yaml up -d
 
 version: "3.8"
 services:
   aio-sandbox:
-    image: ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest
+    image: ghcr.io/agent-infra/sandbox:latest   # 与根目录保持一致
     ports:
-      - "8811:8811"   # MCP HTTP port
+      - "8022:8080"   # Sandbox MCP 端点：http://localhost:8022/mcp
     volumes:
-      - ./workspace:/workspace:rw       # 整个 workspace 可读写（memory-save 写这里）
-      - ../skills:/mnt/skills:rw        # 共享 skills 目录（skill-creator 写这里）
-    environment:
-      - MCP_SERVER_PORT=8811
+      - ./workspace:/workspace:rw       # 💡 整个 workspace 可读写（m2l16 是 data:ro）
+      - ../skills:/mnt/skills:rw        # 💡 共享 skills/ 改为 rw（m2l16 是 :ro）
+    security_opt:
+      - seccomp:unconfined
