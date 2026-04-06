@@ -9,12 +9,13 @@
   - reject + retry：主 Agent 验收不通过时重新 spawn 修复子 Agent
 
 运行方式：
-  cd m4l23~28/m4l23 && python3 m4l23_orchestrator.py
+  cd m4l23 && python3 m4l23_orchestrator.py
 """
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -271,18 +272,19 @@ def build_orchestrator() -> tuple[Agent, Task]:
     orchestrator = Agent(
         role="Software Development Orchestrator",
         goal=(
-            "接收软件需求文档，完成架构和接口设计，协调专职子 Agent 分模块实现，"
-            "验收代码质量，修复问题，输出完整可交付的项目。"
+            "接收软件需求文档，按 SOP **一次性连续跑完**各阶段，协调子 Agent 完成设计、实现、测试与交付；"
+            "不中断、不向用户提问；遇问题按 SOP 自行重试与修复。"
+            "你只做拆解、派单、验收与重试，不执笔任何文档或代码。"
         ),
         backstory=(
             "你是一名有 10 年全栈经验的技术负责人，擅长把模糊需求拆解成清晰可执行的子任务。\n"
             "你的工作方式：\n"
-            "1. 架构和接口设计由你亲自完成——这是全局一致性的保障\n"
-            "2. 具体实现任务交给专职子 Agent——你负责指派和验收，不自己写代码\n"
-            "3. 给子 Agent 派任务时，总是显式传递它需要的所有信息，"
+            "1. 架构/接口/代码/报告一律由子 Agent 产出——你只读需求、spawn、用 FileReadTool 验收\n"
+            "2. 给子 Agent 派任务时，总是显式传递它需要的全部信息，"
             "绝不假设它能'感知'你做过什么\n"
-            "4. 独立的任务用并发子 Agent；有依赖关系的严格串行\n"
-            "5. 始终按照下方 SOP 流程推进，不跳过任何阶段\n\n"
+            "3. 独立的任务用并发子 Agent；有依赖关系的严格串行\n"
+            "4. 始终按照下方 SOP 流程推进，不跳过任何阶段\n"
+            "5. **一次跑完全程**：不向用户提问或求确认；遇阻自行 spawn 修复/重试，按 SOP 解决\n\n"
             "你的工具：\n"
             "- spawn_sub_agent：开一个子 Agent 执行单个任务（串行）\n"
             "- spawn_sub_agents_parallel：同时开多个互相独立的子 Agent（并发）\n"
@@ -297,11 +299,12 @@ def build_orchestrator() -> tuple[Agent, Task]:
 
     main_task = Task(
         description=(
-            f"读取需求文档 {REQUIREMENTS_FILE}，按照 SOP 完成完整交付：\n\n"
-            "1. 完成架构设计（workspace/design/architecture.md）和接口规范（workspace/design/api_spec.md）——你自己写\n"
-            "2. 按 SOP 各阶段协调子 Agent：mock/单测 → 前后端开发 → 代码审查+测试 → 修复循环\n"
-            "3. 输出 workspace/delivery_report.md（含文件路径引用，不复制代码内容）\n\n"
+            f"读取需求文档 {REQUIREMENTS_FILE}，按照 SOP 完成完整交付（你只协调，不执笔）：\n\n"
+            "1. 阶段 1：spawn 子 Agent 产出 A（architecture.md）与 B（api_spec.md），你用 FileReadTool 分别验收\n"
+            "2. 阶段 2～5：按 SOP 协调子 Agent：mock/单测 → 前后端开发 → 代码审查+测试 → 修复循环\n"
+            "3. 阶段 6：spawn 子 Agent 写 workspace/delivery_report.md（仅路径引用，不复制代码），你再读取确认\n\n"
             "关键约束：\n"
+            "- **一次性做完整个 SOP**，中间不要停、不要向用户提问或等待确认；有问题按 SOP 自己解决（重试、修复子 Agent）\n"
             "- spawn 子 Agent 时必须显式传递完整上下文（文件内容，不只是路径）\n"
             f"- 所有产出文件放在 {WORKSPACE_DIR}/ 下\n"
             "- 子 Agent 完成后必须用 FileReadTool 读取输出文件确认内容\n"
@@ -322,6 +325,9 @@ def build_orchestrator() -> tuple[Agent, Task]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run() -> Any:
+    # 避免 CrewAI 首次运行后弹出「是否查看 execution traces」阻塞或打断自动化流程
+    os.environ.setdefault("CREWAI_TESTING", "true")
+
     print("=" * 60)
     print("第23课·Orchestrator范式 演示")
     print(f"需求文档 : {REQUIREMENTS_FILE}")

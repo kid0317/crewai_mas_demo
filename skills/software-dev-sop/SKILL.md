@@ -24,6 +24,15 @@ allowed-tools:
 
 ---
 
+## 一次性执行与自主推进（必须遵守）
+
+- **一次跑完全部 SOP 阶段**，从阶段 1 连续推进到阶段 6，**不要中途停下**等待用户或「先做到这里」。
+- **不要向用户提问、不要求用户确认、不输出「是否继续」类话术**；信息不足时在合理假设下推进，并在交付报告中注明假设。
+- **遇到问题自行解决**：按本 SOP 的重试与修复规则 spawn 子 Agent、调整任务、重跑测试；**不要**把决策抛给用户。
+- 仅在**环境/工具出现无法在本机自行恢复的致命错误**时，才在交付报告中如实记录原因与已尝试的修复。
+
+---
+
 ## 必要中间产物（全部必须存在才算交付）
 
 | # | 产物 | 路径 | 说明 |
@@ -41,12 +50,23 @@ allowed-tools:
 
 ## 阶段与决策规则
 
-### 阶段 1：分析与设计（你自己完成）
+### 阶段 1：分析与设计（委派子 Agent，主 Agent 不执笔）
 
-阅读需求文档，完成 A 和 B。
+主 Agent 只做：读取需求、**spawn 子 Agent**、用 FileReadTool 验收 A/B 内容是否齐全一致。
 
-**不开子 Agent。** A 和 B 是所有后续子 Agent 的共同基础，必须在主 Agent
-的单一上下文里完成，保证一致性。
+**开 1 个子 Agent（串行）**：
+
+```
+role:    "Architecture Designer"
+tools:   FileWriterTool
+context: requirements.md 的完整内容（直接传内容，不传路径）
+task:    1. 写 workspace/design/architecture.md（模块、技术栈、目录结构）
+         2. 写 workspace/design/api_spec.md（RESTful：路径/方法/请求/响应/错误码）
+output:  workspace/design/architecture.md（主产物路径；api_spec 必须在同目录一并写出）
+```
+
+验收：主 Agent 用 FileReadTool **分别读取** `architecture.md` 与 `api_spec.md`，
+确认与需求一致后再进入阶段 2。
 
 ---
 
@@ -133,10 +153,19 @@ output:  workspace/mock/ 和 workspace/tests/
 
 ---
 
-### 阶段 6：交付（你自己完成）
+### 阶段 6：交付（委派子 Agent，主 Agent 不执笔）
 
-全部验收通过后，写 workspace/delivery_report.md。
-只写文件路径引用，不复制代码内容。
+全部验收通过后，**spawn 子 Agent** 写 `workspace/delivery_report.md`：
+
+```
+role:    "Delivery Writer"
+tools:   FileWriterTool
+context: 主 Agent 提供的：需求摘要 + 各中间产物路径列表 + 验收结论（通过/未通过项）
+task:    写 delivery_report.md，仅文件路径引用，不复制代码
+output:  workspace/delivery_report.md
+```
+
+主 Agent 用 FileReadTool 确认报告存在且路径完整。
 
 ---
 
@@ -158,6 +187,9 @@ output:  workspace/mock/ 和 workspace/tests/
 - 每个阶段最多重试 2 次；超出则记录问题继续推进
 
 **何时不开子 Agent**
-- 任务很小（写一个配置文件、改一行代码）→ 主 Agent 直接处理
-- 需要全局视野的决策（架构设计、接口定义、最终验收判断）→ 主 Agent 处理
+- 任务很小（仅判断通过/不通过、选下一步动作）→ 主 Agent 直接处理
 - 子 Agent 的上下文和工具与主 Agent 完全相同且无并发价值 → 没必要开
+
+**默认由子 Agent 执笔的交付物**
+- 架构/接口文档、mock、前后端代码、审查/测试报告、交付报告等均通过 spawn 产出；
+  主 Agent 负责读需求、派单、串并行决策、FileReadTool 验收与必要时重试。
