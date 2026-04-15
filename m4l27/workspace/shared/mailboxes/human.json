@@ -1,32 +1,24 @@
 [
   {
-    "id": "16d9be38-abb0-4fad-8b37-3bffb14542ce",
+    "id": "6f109a62-19ca-43a5-8e58-89ba3b597339",
     "from": "manager",
     "to": "human",
-    "type": "needs_confirm",
-    "subject": "需求文档（第1轮）待确认",
-    "content": "需求文档路径：shared/needs/requirements.md\n当前轮次：1/3",
-    "timestamp": "2026-04-14T17:59:31.303344+00:00",
-    "read": true
+    "type": "sop_draft_confirm",
+    "subject": "SOP草稿（product_design_sop，第1轮）待确认",
+    "content": "草稿路径：shared/sop/draft_product_design_sop.md\n当前轮次：1/3\n确认后将正式写入：shared/sop/product_design_sop.md",
+    "timestamp": "2026-04-15T08:19:21.836247+00:00",
+    "read": true,
+    "rejected": true,
+    "human_feedback": "感觉后面应该再加一个审核环节,pm还要自我审核调研报告质量,以及是否所有信息都符合搜索的客观材料."
   },
   {
-    "id": "38f084c2-3b90-4b03-8f53-437719efdb61",
+    "id": "d6e55e2e-6767-4f8c-811e-b9aad6fa9ffd",
     "from": "manager",
     "to": "human",
-    "type": "sop_confirm",
-    "subject": "SOP 已选定，请确认后继续",
-    "content": "Manager 已选择 SOP，写入 shared/sop/active_sop.md\nSOP 选择结论：已选择 product_design_sop.md，理由：该 SOP 适用于产品设计任务，涵盖了从需求理解到文档撰写及验收标准设定的完整流程，已写入 active_sop.md\n\n# 产品设计 SOP（标准操作规程）\n\n## 适用角色\n\nPM（产品经理）\n\n## 产品文档设计流程\n\n### 第一步：需求理解\n\n1. 读取需求文档 `/mnt/shared/needs/requirements.md\n确认后将按此 SOP 执行任务。",
-    "timestamp": "2026-04-14T18:01:19.145691+00:00",
-    "read": true
-  },
-  {
-    "id": "824d94a9-cf8f-4987-91f6-ec0589793176",
-    "from": "manager",
-    "to": "human",
-    "type": "checkpoint_request",
-    "subject": "产品文档已完成，请确认后继续",
-    "content": "产品文档路径：shared/design/product_spec.md（请打开查阅后确认）",
-    "timestamp": "2026-04-14T18:05:32.955793+00:00",
+    "type": "sop_draft_confirm",
+    "subject": "SOP草稿（product_design_sop，第2轮）待确认",
+    "content": "草稿路径：shared/sop/draft_product_design_sop.md\n当前轮次：2/3\n确认后将正式写入：shared/sop/product_design_sop.md",
+    "timestamp": "2026-04-15T08:24:27.996091+00:00",
     "read": true
   }
 ]

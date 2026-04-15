@@ -357,9 +357,8 @@ class SOPCreatorCrew(_SessionMixin):
     通过 sop-creator skill（reference 类型）注入 SOP 设计四要素框架。
     """
 
-    def __init__(self, session_id: str, sop_name: str = "product_design") -> None:
+    def __init__(self, session_id: str) -> None:
         self.session_id = session_id
-        self.sop_name   = sop_name
         self._init_session_state(SESSIONS_DIR)
 
     @agent
@@ -371,21 +370,26 @@ class SOPCreatorCrew(_SessionMixin):
 
     @task
     def create_sop_task(self) -> Task:
-        draft_path = f"/mnt/shared/sop/draft_{self.sop_name}.md"
         return Task(
             description = "{user_request}\n\n{revision_context}",
             expected_output = (
                 "完成以下步骤：\n"
                 "1. 调用 skill_loader 工具（skill_name='sop-creator'，task_context 留空），\n"
                 "   获取 SOP 设计四要素框架（角色分工/步骤清单/Checkpoint/质量标准）\n"
+                "   同时根据 sop-creator skill 的命名规则，从任务背景中提炼出 sop_name\n"
+                "   （ASCII 小写下划线风格，结尾加 _sop，如 competitive_analysis_sop）\n"
                 "2. 若 revision_context 不为空，根据人类反馈修改上一版草稿；\n"
                 "   否则按框架全新设计 SOP\n"
                 "3. 调用 skill_loader 工具（skill_name='memory-save'），在 task_context 中说明：\n"
-                f"   - 将草稿写入路径：{draft_path}\n"
+                "   - 将草稿写入路径：/mnt/shared/sop/draft_{sop_name}.md\n"
+                "     （{sop_name} 替换为第1步提炼的实际名称）\n"
                 "   - 写入方式：sandbox_file_operations(action=write)\n"
                 "   - 文档必须包含：适用场景 / 角色分工 / 执行步骤 / Checkpoint / 质量标准\n"
                 "   注意：skill_loader 是唯一可用工具\n"
-                f"确认草稿写入后输出：「SOP草稿已完成，路径：{draft_path}」"
+                "确认草稿写入后，最后一行必须严格输出：\n"
+                "SOP_NAME={sop_name}\n"
+                "SOP_PATH=/mnt/shared/sop/draft_{sop_name}.md\n"
+                "（{sop_name} 替换为实际使用的名称，此两行供框架解析，不可省略）"
             ),
             agent = self.manager_agent(),
         )
