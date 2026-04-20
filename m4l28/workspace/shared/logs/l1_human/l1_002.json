@@ -5,6 +5,6 @@
   "type": "checkpoint_rejected",
   "subject": "设计文档退回：t003",
   "content": "交互细节不足，表单验证逻辑缺失",
-  "timestamp": "2026-04-15T07:54:55.427237+00:00",
+  "timestamp": "2026-04-16T13:13:28.453531+00:00",
   "read": true
 }

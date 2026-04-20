@@ -18,6 +18,7 @@ seed_logs.py — 预置演示用历史日志
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from tools.log_ops import write_l2, write_l3
 
 def seed_logs(base_dir: Path | None = None) -> None:
     """
-    写入预置演示日志。
+    写入预置演示日志（基于当前时刻生成，每次运行前清空旧数据）。
 
     Args:
         base_dir: workspace 根目录。默认为本文件所在目录的 workspace/
@@ -36,7 +37,16 @@ def seed_logs(base_dir: Path | None = None) -> None:
         base_dir = Path(__file__).resolve().parent / "workspace"
 
     logs_dir = base_dir / "shared" / "logs"
+    # 清空旧日志，确保每次运行都基于当前时刻重新生成
+    if logs_dir.exists():
+        shutil.rmtree(logs_dir)
     logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # 清空旧 session 数据
+    pm_sessions_dir = base_dir / "pm" / "sessions"
+    if pm_sessions_dir.exists():
+        shutil.rmtree(pm_sessions_dir)
+    pm_sessions_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc)
 
@@ -193,6 +203,10 @@ def seed_logs(base_dir: Path | None = None) -> None:
             file_path.write_text(json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"[SEED] L1 人类纠正日志已写入：{len(l1_entries)} 条")
+
+    # ── 重置 PM 工作区文件（确保演示可重复运行）────────────────────────────────
+    _reset_workspace_files(base_dir)
+
     print(f"[SEED] 完成！日志目录：{logs_dir}")
 
 
@@ -260,6 +274,32 @@ def _write_session_l3(
                     "end_line": end_line,
                 }
                 idx.write(json.dumps(idx_entry, ensure_ascii=False) + "\n")
+
+
+def _reset_workspace_files(base_dir: Path) -> None:
+    """重置复盘演示会修改的 PM 文件到 baseline 状态。
+
+    复盘流程会通过 before_text → after_text 修改 PM 的配置文件。
+    每次重跑演示前，需要恢复这些文件到初始状态。
+    """
+    baselines_dir = Path(__file__).resolve().parent / "baselines"
+
+    file_map = {
+        "pm_agent.md":                base_dir / "pm" / "agent.md",
+        "pm_soul.md":                 base_dir / "pm" / "soul.md",
+        "pm_memory.md":               base_dir / "pm" / "memory.md",
+        "pm_product_design_skill.md": base_dir / "pm" / "skills" / "product_design" / "SKILL.md",
+    }
+
+    for baseline_name, target_path in file_map.items():
+        src = baselines_dir / baseline_name
+        if not src.exists():
+            print(f"[WARN] baseline 文件不存在，跳过：{src}")
+            continue
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+    print(f"[SEED] PM 工作区文件已重置到 baseline（{len(file_map)} 个文件）")
 
 
 if __name__ == "__main__":
